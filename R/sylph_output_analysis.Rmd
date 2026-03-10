@@ -90,7 +90,7 @@ trimmed_data <- lapply(trimmed_data, function(x) {
 })
 ```
 
-Next, we will combine list objects from pairs of objects with the same file names except for "L001" to denote lane 1 or "L002" to denote lane 2. 
+Next, we will combine list objects from pairs of objects with the same file names. Some samples were run across multiple lanes (e.g., have both "L001" to denote lane 1 and "L002" to denote lane 2), and we want to combine these. Other samples were combined prior to sylph analysis. 
 
 ```{r combine site data}
 # Create a base identifier for each site by removing 'L001' and 'L002' from the output name
