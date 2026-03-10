@@ -291,7 +291,7 @@ ggplot(data = bray_curtis_pcoa_df, aes(x=pcoa1, y=pcoa2, color = water_pH)) +
        color = "Water pH") +
   scale_color_viridis_c(end = .7) +
   theme(title = element_text(size = 10)) # makes titles smaller
-ggsave("ph.png", height = 5, width = 6)
+ggsave("figures/pcoa_colored_by_ph.png", height = 5, width = 6)
 
 # plot order abundance pcoa, colored by temperature 
 ggplot(data = bray_curtis_pcoa_df, aes(x=pcoa1, y=pcoa2, color = tmp)) +
@@ -301,7 +301,7 @@ ggplot(data = bray_curtis_pcoa_df, aes(x=pcoa1, y=pcoa2, color = tmp)) +
        color = "Temperature") +
   scale_color_viridis_c(end = .7) +
   theme(title = element_text(size = 10)) 
-ggsave("tmp.png", height = 5, width = 6)
+ggsave("figures/pcoa_colored_by_temp.png", height = 5, width = 6)
 
 # plot order abundance pcoa, colored by first coordinate of heavy metals pcoa
 ggplot(data = bray_curtis_pcoa_df, aes(x=pcoa1, y=pcoa2, color = heavy1)) +
@@ -311,7 +311,7 @@ ggplot(data = bray_curtis_pcoa_df, aes(x=pcoa1, y=pcoa2, color = heavy1)) +
        color = "Heavy\nmetals\nPC 1") +
   scale_color_viridis_c(end = .7) +
   theme(title = element_text(size = 10)) 
-ggsave("heavy1.png", height = 5, width = 6)
+ggsave("figures/pcoa_colored_by_heavy_metals.png", height = 5, width = 6)
 ```
 
 Perform permanovas to test whether variation in Bray–Curtis dissimilarities of order-level community composition is associated with environmental variables.
@@ -325,15 +325,15 @@ permanova_tmp <- vegan::adonis2(community_data_wide ~ tmp, data = bray_curtis_pc
 permanova_heavy1 <- vegan::adonis2(community_data_wide ~ heavy1, data = bray_curtis_pcoa_df, permutations = 9999)
 ```
 
-Generate a heatmap of bacterial order abundances. 
+Generate a heatmap of order abundances. 
 
-```{r heatmap of bacterial orders, fig.width = 15, fig.height = 9}
+```{r heatmap of orders, fig.width = 15, fig.height = 9}
 # plot relative abundances of all detected orders in each site 
 ggplot(community_data, aes(
   forcats::fct_reorder(clade_name, relative_abundance, .desc = T, .fun = sum), 
   site_id, fill= relative_abundance)) + 
   geom_tile() +
-  labs(y = "Sampling site", x = "Bacterial order", fill = "Relative\nabundance") +
+  labs(y = "Sampling site", x = "Order", fill = "Relative\nabundance") +
   scale_fill_viridis_c() +
   theme_minimal(base_size = 13) +
   theme(
@@ -420,6 +420,7 @@ ggplot(
     vjust = .5,
     size = 7
   )) 
+ggsave("figures/rel_abund_by_sample.png", height = 9, width = 15)
 ```
 
 Next, aggregate by site. 
@@ -443,6 +444,7 @@ ggplot(
     vjust = .5,
     size = 7
   )) 
+ggsave("figures/rel_abund_by_site.png", height = 9, width = 15)
 ```
 
 Finally, aggregate by site and only keep the ten orders with the highest average relative abundances across sites. Collapse all other orders into an "other" category. 
@@ -486,4 +488,5 @@ ggplot(
   scale_fill_manual(values = fill_values, breaks = c(rev(order_levels), "other")) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5, size = 7)) 
+ggsave("figures/top_rel_abund_by_site.png", height = 9, width = 15)
 ```
