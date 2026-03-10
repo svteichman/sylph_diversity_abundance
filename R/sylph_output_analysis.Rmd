@@ -109,22 +109,22 @@ for (key in names(trimmed_data)) {
 }
 ```
 
-For each sample, we will group by order and sum relative abundances and sequence abundances. 
+For each sample, we will group by order and calculate mean relative abundances and sequence abundances. 
 
 ```{r average site data}
 combined_data <- lapply(combined_data, function(x) {
-  x %>% 
-    group_by(clade_name) %>% # group by order 
-     mutate( # force abundances to be numeric variables 
+  x %>%
+    group_by(clade_name) %>% # group by order
+     mutate( # force abundances to be numeric variables
       relative_abundance = as.numeric(relative_abundance),
       sequence_abundance = as.numeric(sequence_abundance)
     ) %>%
-    summarise(across(where(is.numeric), \(x) sum(x, na.rm = TRUE))) %>% # sum abundances at order level 
+    summarise(across(where(is.numeric), \(x) sum(x, na.rm = TRUE))) %>% # sum abundances at order level
     ungroup()
 })
 
 paired_files <- which(str_detect(names(combined_data), "HHGCVDRX3"))
-# for paired files, divide abundance sums by 2 
+# for paired files, divide abundance sums by 2
 combined_data[paired_files] <- lapply(combined_data[paired_files], function(x) {
   x %>%
     mutate(across(contains("abundance"), ~ .x / 2))
@@ -406,7 +406,7 @@ ggplot(
   full_data,
   aes(
     x = site_rep_id,
-    y = relative_abundance * 2,
+    y = relative_abundance,
     fill = clade_name
   )
 ) +
@@ -430,7 +430,7 @@ ggplot(
   community_data,
   aes(
     x = site_id,
-    y = relative_abundance * 2,
+    y = relative_abundance * 100,
     fill = clade_name
   )
 ) +
@@ -460,7 +460,7 @@ top_n_clades <- community_data %>%
 community_data_top_n <- community_data %>%
   mutate(clade_name = ifelse(clade_name %in% top_n_clades, clade_name, "other")) %>% # if order isn't one of the top ten, recode it as "other" 
   group_by(site_id, clade_name) %>% # aggregate "other" category
-  summarise(relative_abundance = sum(relative_abundance), .groups = "drop") # sum relative abundance across "other" category
+  summarise(relative_abundance = 100 * sum(relative_abundance), .groups = "drop") # sum relative abundance across "other" category
 
 order_levels <- community_data_top_n %>%
   filter(clade_name != "other") %>% # for top ten orders
