@@ -367,7 +367,7 @@ ggplot(community_data, aes(
 ggsave("figures/heatmap_ordered.png", width = 15, height = 9)
 ```
 
-Generate a heatmap of environmental variables. [something wrong with na's and scale!!!!]
+Generate a heatmap of environmental variables. 
 
 ```{r heatmap of environmental variables, fig.width = 15, fig.height = 9}
 vars <- c(heavy_metal_vars, elemental_vars, environmental_vars)
