@@ -16,126 +16,57 @@ library(dplyr)
 library(ggplot2)
 library(ggpubr)
 library(stringr)
+library(readr)
+library(tidyr)
+```
+
+### Set database variable
+
+We will consider sylph outputs from two different databases, the commonly used GTDB r226 database, and the larger GlobDB database. We will set an variable here to determine which database we want to analyze the output from. 
+
+```{r}
+# db <- "GTDB"
+db <- "GlobDB"
 ```
 
 ### Load and clean data 
 
-Load the sylph output data. This code currently reads the short read output, but replacing line 19 with line 20 will read the long read output instead. 
+Load in the table of sylph output. Each row represents a taxon identified in the sylph run, and each column represents a sample. 
 
 ```{r load data}
-# Read in filename metadata 
-file_metadata <- read.csv("../data/sylph_file_metadata.csv") # short read output
-# file_metadata <- read.csv("../data/sylph_file_metadata_long_read.csv") # use this for long read output
-
-file_list <- file_metadata$file_name
-
-# Initialize a list to store the data frames, using file names 
-data_frames <- vector(mode = "list", length = length(file_list))
-names(data_frames) <- file_list
-
-# Loop through each file in the file list
-for (file_name in file_list) {
-  # Construct the full path to the file
-  file_path <- file.path("../data/", file_name)
-  
-  # Get column names
-  columns <- str_split(readLines(file_path)[2], pattern = '\t')[[1]]
-  
-  # Read the file into a data frame, specifying the separator and column names
-  df <- read.table(file_path, sep = "\t", col.names = columns, header = FALSE, fill = TRUE)
-  
-  # Add the data frame to the list, using the file name (without extension) as the key
-  data_frames[[file_name]] <- df
-}
-
-# Print the number of files processed
-cat("Number of files processed:", length(data_frames), "\n")
-```
-
-There are two different sets of files, paired files that start with "HHGCVDRX3" and use "L001" and "L002" to denote the same samples processed through different lanes, and single files that start with "tax_profile_merged". These files have slightly different clade names, so we will fix that. 
-
-```{r clean variable name for clade name}
-head(file_list) # file names for paired files
-tail(file_list) # file names for pre-merged files
-paired_files <- which(str_detect(file_list, "HHGCVDRX3"))
-merged_files <- which(str_detect(file_list, "tax_profile"))
-
-names(data_frames[[paired_files[1]]]) # variable names for data from paired files
-names(data_frames[[merged_files[1]]]) # variable names for data from merged files
-
-data_frames[paired_files] <- lapply(data_frames[paired_files],
-                                    function(x) {
-                                      x %>% rename(clade_name = X.clade_name)
-                                    })
-names(data_frames[[paired_files[1]]]) # now clade names for all elements of data_frames are the same
+sylph_output <- read_tsv(paste0("../data/merged_relative_abundance_", db, ".tsv"), col_names = TRUE)
+names(sylph_output)[-1] <- str_remove(names(sylph_output)[-1], "^([^/]*/){8}") %>% # remove up through the first 8 "/" in file name, since these are uninformative or redundant
+  str_remove(".fastq.gz") # remove file extension 
+sylph_output <- sylph_output %>%
+  pivot_longer(names(sylph_output)[-1], names_to = "sample_id", values_to = "rel_abund") %>% # wide to long format 
+  separate_wider_delim(sample_id, names = c("platform", "sample_id"), delim = "/") %>% # split sequencing platform from sample id
+  mutate(sample_id = str_remove(sample_id, "Molecular_")) %>% 
+  separate_wider_delim(sample_id, names = c("site_id", "replicate", "read_type"), delim = "_", 
+                       cols_remove = FALSE, too_few = "align_start") %>% # split sample id into site id, replicate, and read type
+  select(-read_type) # remove read type (this is R1 for all short reads, NA for all long reads )
 ```
 
 The sylph output includes a row for each taxonomic level found in the sample. We want to perform an analysis at the order level, so we have to remove all rows that correspond to broader or finer taxonomic levels. 
 
 ```{r trim data}
-# for each element in data_frames, make a new element in trimmed_data that only retains rows at the order level
-trimmed_data <- lapply(data_frames, function(x) {
-  x %>% 
-    filter(str_detect(clade_name, "o_"), # keep rows that have order, denoted by "o__"
+# only retain rows at the order level
+trimmed_data <- sylph_output %>%
+  filter(str_detect(clade_name, "o_"), # keep rows that have order, denoted by "o__"
            !str_detect(clade_name, "f_")) # remove rows that have family, denoted by "f__"
-})
 ```
 
 Now that we have data at the order level, we will remove other taxonomic information and remove the "o__" prefix. 
 
 ```{r clean taxonomy}
-trimmed_data <- lapply(trimmed_data, function(x) {
-  x %>%
-    mutate(clade_name = str_replace(clade_name,".*?o__", "" )) # remove taxonomy info up to and including "o__" 
-})
-```
-
-Next, we will combine list objects from pairs of objects with the same file names. Some samples were run across multiple lanes (e.g., have both "L001" to denote lane 1 and "L002" to denote lane 2), and we want to combine these. Other samples were combined prior to sylph analysis. 
-
-```{r combine site data}
-# Create a base identifier for each site by removing 'L001' and 'L002' from the output name
-base_identifiers <- unique(str_remove(names(trimmed_data), "L00[12]"))
-# Initialize an empty list with length of the number o f base identifiers
-combined_data <- vector(mode = "list", length = length(base_identifiers))
-names(combined_data) <- base_identifiers
-
-# Loop through each key in the trimmed_data list
-for (key in names(trimmed_data)) {
-  # Get the base identifier for this output
-  base_identifier <- str_remove(key, "L00[12]")
-  
-  # Combine the current data frame with the existing one for the base identifier
-  combined_data[[base_identifier]] <- rbind(combined_data[[base_identifier]], trimmed_data[[key]])
-}
+trimmed_data <- trimmed_data %>%
+  mutate(clade_name = str_replace(clade_name,".*?o__", "" )) # remove taxonomy info up to and including "o__" 
 ```
 
 For each sample, we will group by order and calculate mean relative abundances and sequence abundances. 
-
 ```{r average site data}
-combined_data <- lapply(combined_data, function(x) {
-  x %>%
-    group_by(clade_name) %>% # group by order
-     mutate( # force abundances to be numeric variables
-      relative_abundance = as.numeric(relative_abundance),
-      sequence_abundance = as.numeric(sequence_abundance)
-    ) %>%
-    summarise(across(where(is.numeric), \(x) sum(x, na.rm = TRUE))) %>% # sum abundances at order level
-    ungroup()
-})
-
-paired_files <- which(str_detect(names(combined_data), "HHGCVDRX3"))
-# for paired files, divide abundance sums by 2
-combined_data[paired_files] <- lapply(combined_data[paired_files], function(x) {
-  x %>%
-    mutate(across(contains("abundance"), ~ .x / 2))
-})
-```
-
-Finally, merge list elements into a single table, using list element names as ids. 
-
-```{r sylph table}
-# convert sylph output list to dataframe, converting list element names to id column
-sylph_data <- bind_rows(combined_data, .id = "id")
+combined_data <- trimmed_data %>% 
+  group_by(clade_name, platform, site_id, replicate, sample_id) %>% # aggregate over clade_name
+  summarise(rel_abund_sum = sum(rel_abund, na.rm = TRUE), .groups = "drop") 
 ```
 
 We will now read in soil and site data. 
@@ -198,9 +129,7 @@ We now combine the sylph output with the sites and soil data.
 
 ```{r join data}
 # combine sylph data with metal and climate data 
-full_data <- sylph_data %>% 
-  mutate(id = stringr::str_replace(id,"__", "_L001_")) %>% # add lane back into paired ids
-  left_join(file_metadata, by = c("id" = "file_name")) %>% # join with file metadata to include site_id
+full_data <- combined_data %>% 
   left_join(soil_data, by = "site_id") %>% # join with soil data that has been aggregated to the site level
   left_join(site_data, by = "site_id") # join with site data 
 ```
@@ -212,7 +141,7 @@ First, aggregate samples to the level of site id, and calculate relative abundan
 ```{r community data}
 community_data <- full_data %>%
   group_by(site_id, clade_name) %>% # aggregate at order and sampling site level
-  summarize(relative_abundance = mean(relative_abundance), # get average relative abundance of orders at each site
+  summarize(relative_abundance = mean(rel_abund_sum), # get average relative abundance of orders at each site
             .groups = "drop_last") %>% 
   mutate(mult_factor = sum(relative_abundance)) %>% 
   ungroup() %>%
@@ -237,7 +166,7 @@ clim_data_perm <-
   full_data %>% 
   tidyr::drop_na(site_id) %>%  # remove rows missing site id
   dplyr::filter(site_id != "") %>% 
-  select(!c(clade_name, relative_abundance, sequence_abundance, ANI..if.strain.level., id, date, root, seq_id, site_rep_id)) %>% # remove sequencing related variables 
+  select(!c(clade_name, platform, replicate, sample_id, rel_abund_sum)) %>% # remove sequencing related variables 
   distinct() %>% # keep only unique rows, one per site 
   arrange(site_id) %>%
   tibble::column_to_rownames("site_id")
@@ -316,7 +245,7 @@ ggplot(data = bray_curtis_pcoa_df, aes(x=pcoa1, y=pcoa2, color = water_pH)) +
        color = "Water pH") +
   scale_color_viridis_c(end = .7) +
   theme(title = element_text(size = 10)) # makes titles smaller
-ggsave("figures/pcoa_colored_by_ph.png", height = 5, width = 6)
+ggsave(paste0("figures/pcoa_colored_by_ph_", db, ".png"), height = 5, width = 6)
 
 # plot order abundance pcoa, colored by temperature 
 ggplot(data = bray_curtis_pcoa_df, aes(x=pcoa1, y=pcoa2, color = tmp)) +
@@ -326,7 +255,7 @@ ggplot(data = bray_curtis_pcoa_df, aes(x=pcoa1, y=pcoa2, color = tmp)) +
        color = "Temperature") +
   scale_color_viridis_c(end = .7) +
   theme(title = element_text(size = 10)) 
-ggsave("figures/pcoa_colored_by_temp.png", height = 5, width = 6)
+ggsave(paste0("figures/pcoa_colored_by_temp_", db, ".png"), height = 5, width = 6)
 
 # plot order abundance pcoa, colored by first coordinate of heavy metals pcoa
 ggplot(data = bray_curtis_pcoa_df, aes(x=pcoa1, y=pcoa2, color = heavy1)) +
@@ -336,7 +265,7 @@ ggplot(data = bray_curtis_pcoa_df, aes(x=pcoa1, y=pcoa2, color = heavy1)) +
        color = "Heavy\nmetals\nPC 1") +
   scale_color_viridis_c(end = .7) +
   theme(title = element_text(size = 10)) 
-ggsave("figures/pcoa_colored_by_heavy_metals.png", height = 5, width = 6)
+ggsave(paste0("figures/pcoa_colored_by_heavy_metals_", db, ".png"), height = 5, width = 6)
 ```
 
 Perform permanovas to test whether variation in Bray–Curtis dissimilarities of order-level community composition is associated with environmental variables.
@@ -364,7 +293,7 @@ ggplot(community_data, aes(
   theme(
     axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)
   ) 
-ggsave("figures/heatmap_ordered.png", width = 15, height = 9)
+ggsave(paste0("figures/heatmap_ordered_", db, ".png"), width = 15, height = 9)
 ```
 
 Generate a heatmap of environmental variables. 
@@ -395,7 +324,7 @@ ggplot(clim_data_perm_plot, aes(
   theme(
     axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)
   ) 
-ggsave("figures/heatmap_envt_ordered.png", width = 15, height = 9)
+ggsave("figures/heatmap_env_ordered.png", width = 15, height = 9)
 ```
 
 Calculate observed Shannon diversity index and richness for each site, and plot Shannon diversity index by environmental variables.
@@ -427,14 +356,20 @@ Next, we generate stacked bar charts of order relative abundances across sites.
 First, keep all orders and plot at the site replicate level.
 
 ```{r stacked bar chart}
-ggplot(
-  full_data,
-  aes(
-    x = site_rep_id,
-    y = relative_abundance,
-    fill = clade_name
-  )
-) +
+full_data %>%
+  group_by(sample_id, clade_name) %>% # aggregate at order and sampling site level
+  summarize(relative_abundance = mean(rel_abund_sum), # get average relative abundance of orders at each site
+            .groups = "drop_last") %>% 
+  mutate(mult_factor = sum(relative_abundance)) %>% 
+  ungroup() %>%
+  mutate(relative_abundance = relative_abundance / mult_factor) %>% # rescale relative abundances after aggregation 
+  ggplot(
+    aes(
+      x = sample_id,
+      y = relative_abundance,
+      fill = clade_name
+    )
+  ) +
   geom_bar(stat = "identity", position = 'stack') +
   labs(x = "Site Location", y = "Relative Abundance", fill = "Order name") +
   scale_fill_discrete(guide = "none") +
@@ -445,7 +380,7 @@ ggplot(
     vjust = .5,
     size = 7
   )) 
-ggsave("figures/rel_abund_by_sample.png", height = 9, width = 15)
+ggsave(paste0("figures/rel_abund_by_sample_", db, ".png"), height = 9, width = 15)
 ```
 
 Next, aggregate by site. 
@@ -469,7 +404,7 @@ ggplot(
     vjust = .5,
     size = 7
   )) 
-ggsave("figures/rel_abund_by_site.png", height = 9, width = 15)
+ggsave(paste0("figures/rel_abund_by_site_", db, ".png"), height = 9, width = 15)
 ```
 
 Finally, aggregate by site and only keep the ten orders with the highest average relative abundances across sites. Collapse all other orders into an "other" category. 
@@ -513,5 +448,5 @@ ggplot(
   scale_fill_manual(values = fill_values, breaks = c(rev(order_levels), "other")) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5, size = 7)) 
-ggsave("figures/top_rel_abund_by_site.png", height = 9, width = 15)
+ggsave(paste0("figures/top_rel_abund_by_site_", db, ".png"), height = 9, width = 15)
 ```
