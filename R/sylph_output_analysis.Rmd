@@ -281,7 +281,9 @@ Generate a heatmap of order abundances.
 
 ```{r heatmap of orders, fig.width = 15, fig.height = 9}
 # plot relative abundances of all detected orders in each site 
-ggplot(community_data, aes(
+community_data %>%
+  filter(relative_abundance > 0) %>% 
+  ggplot(aes(
   fct_reorder(clade_name, relative_abundance, .desc = T, .fun = sum), 
   site_id, fill= relative_abundance)) + 
   geom_tile() +
