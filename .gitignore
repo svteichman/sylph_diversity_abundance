@@ -50,3 +50,6 @@ rsconnect/
 
 # .Rproj file
 *.Rproj
+
+# .html output
+*.html

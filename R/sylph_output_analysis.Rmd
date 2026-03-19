@@ -12,10 +12,10 @@ knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
 ```
 
 ```{r load packages, include = FALSE}
-library(dplyr)
-library(ggplot2)
+library(tidyverse)
 library(ggpubr)
-library(stringr)
+library(vegan)
+library(ecodist)
 ```
 
 ### Load and clean data 
@@ -131,91 +131,100 @@ combined_data[paired_files] <- lapply(combined_data[paired_files], function(x) {
 })
 ```
 
-We will combine the sylph output with environmental variables (soil and site properties). 
+Finally, merge list elements into a single table, using list element names as ids. 
 
-```{r add soil and site data}
-# convert list to dataframe, converting list element names to id column
+```{r sylph table}
+# convert sylph output list to dataframe, converting list element names to id column
 sylph_data <- bind_rows(combined_data, .id = "id")
+```
 
-# read in metal data 
-metal_data <- readr::read_csv("../data/BioDIGS_20250220.csv")
+We will now read in soil and site data. 
 
-# clean metal data 
-metal_data <- 
-  metal_data %>% 
-  # select metal related variables 
-  select(site_id, replicate, ends_with("EPA3051"), ends_with("Mehlich3"), "water_pH", "OM_by_LOI_pct") %>% 
-  filter(As_EPA3051 != "Not applicable" & As_EPA3051 != "Not yet tested") %>% 
+```{r load soil and site data}
+# read in site data and soil data
+local <- FALSE
+snapshot <- "20260310"
+
+if (local) {
+  site_data <- read.csv(paste0("../data/BioDIGS_sites_", snapshot, ".csv"), row.names = 1)
+  soil_data <- read.csv(paste0("../data/BioDIGS_soil_", snapshot, ".csv"), row.names = 1)
+} else {
+  site_data <- read.csv(paste0("https://raw.githubusercontent.com/FredHutch/GDSCNsoilsites/refs/heads/main/data/snapshots/BioDIGS_sites_", snapshot, ".csv"), row.names = 1)
+  soil_data <- read.csv(paste0("https://raw.githubusercontent.com/FredHutch/GDSCNsoilsites/refs/heads/main/data/snapshots/BioDIGS_soil_", snapshot, ".csv"), row.names = 1)
+}
+```
+
+Clean the soil data and average measurements across replicates. 
+
+```{r clean soil data}
+soil_data <- soil_data %>%
+  # select relevant soil variables
+  select(site_id, replicate, ends_with("EPA3051"), ends_with("Mehlich3"), 
+         "water_pH", "OM_by_LOI_pct", "vap", "pre", "cld", "tmp") %>%
+  filter(As_EPA3051 != "Not applicable" & As_EPA3051 != "Not yet tested") %>%
   # As can't be detected lower than 3.0
   mutate(As_EPA3051 = case_when(As_EPA3051 == "< 3.0" ~ "0", As_EPA3051 == "<3.0" ~ "0", TRUE ~ As_EPA3051)) %>%
   # Cd can't be detected lower than 0.2
-  mutate(Cd_EPA3051 = case_when(Cd_EPA3051 == "< 0.2" ~ "0", Cd_EPA3051 == "<0.2" ~ "0", TRUE ~ Cd_EPA3051)) %>% 
+  mutate(Cd_EPA3051 = case_when(Cd_EPA3051 == "< 0.2" ~ "0", Cd_EPA3051 == "<0.2" ~ "0", TRUE ~ Cd_EPA3051)) %>%
   # Cu edge case
-  mutate(Cu_EPA3051 = case_when(Cu_EPA3051 == "< 2.0" ~ "0", TRUE ~ Cu_EPA3051)) %>% 
-  # aggregate to site level 
-  group_by(site_id) %>% 
-  # average metal data at the site level 
+  mutate(Cu_EPA3051 = case_when(Cu_EPA3051 == "< 2.0" ~ "0", TRUE ~ Cu_EPA3051)) %>%
+  # aggregate to site level
+  group_by(site_id) %>%
+  # average metal data at the site level
   summarize(across(
     !c(replicate),
     ~ mean(as.numeric(.x))
   ))
+```
 
-# read in climate data 
-clim_data <- read.csv(file = "../data/site_soil_features_t.csv")
-# only retain a subset of climate variables 
-clim_vars_to_keep <- c("X", "mgmt_type", "vap", "pre", "cld", "tmp", "imperv")
-clim_data <- clim_data %>% dplyr::select(tidyselect::all_of(clim_vars_to_keep)) %>% 
-  rename(site_id = X)
+Clean site data.
 
+```{r clean site data}
+site_data <- site_data %>%
+  mutate(
+    # Recode rare management types 
+    mgmt_type = case_when(
+      mgmt_type %in% c(
+        "Botanical Garden",
+        "Mowed to control kudzu, but other than that unmanaged area"
+      ) ~ "Managed: mowed/tended lawns, yard, or park",
+      mgmt_type == "not yet provided" ~ NA,
+      TRUE ~ mgmt_type
+    )) %>%
+  mutate(mgmt_type = as.numeric(as.factor(mgmt_type)))
+```
+
+We now combine the sylph output with the sites and soil data. 
+
+```{r join data}
 # combine sylph data with metal and climate data 
 full_data <- sylph_data %>% 
-  mutate(id = stringr::str_replace(id,"__", "_L001_")) %>% # add lane back into paired ids
+  mutate(id = str_replace(id,"__", "_L001_")) %>% # add lane back into paired ids
   left_join(file_metadata, by = c("id" = "file_name")) %>% # join with file metadata to include site_id
-  left_join(metal_data, by = "site_id") %>% # join with metal data by site_id
-  left_join(clim_data, by = "site_id") # join with climate data by site_id
+  left_join(soil_data, by = "site_id") %>% # join with soil data that has been aggregated to the site level
+  left_join(site_data, by = "site_id") # join with site data 
 ```
 
 ### Plot data 
 
-First, generate a list of environmental variables to investigate. 
-
-```{r make variable list}
-# relevant environmental data 
-var_list <- c(
-  colnames(full_data)[stringr::str_detect(colnames(full_data), "EPA3051")], # Heavy metal testing protocol starts with this
-  colnames(full_data)[stringr::str_detect(colnames(full_data), "Mehlich3")], # Soil elements testing protocol starts with this
-  "water_pH",
-  "mgmt_type",
-  "vap",
-  "pre",
-  "cld",
-  "tmp",
-  "imperv" 
-)
-```
-
-Next, aggregate samples to the level of site id, and calculate relative abundances of orders for each site id. 
+First, aggregate samples to the level of site id, and calculate relative abundances of orders for each site id. 
 
 ```{r community data}
-community_data <-
-  full_data %>% 
-  group_by(site_id, clade_name) %>% # aggregate at the order and sampling site level
-    summarize(across(
-      c(relative_abundance, all_of(var_list)),
-      ~ mean(.x) # calculate average abundances and environmental variables for each site
-    )) %>%
-    group_by(site_id) %>%
+community_data <- full_data %>%
+  group_by(site_id, clade_name) %>% # aggregate at order and sampling site level
+  summarize(relative_abundance = mean(relative_abundance), # get average relative abundance of orders at each site
+            .groups = "drop_last") %>% 
   mutate(mult_factor = sum(relative_abundance)) %>% 
-  ungroup() %>% 
-  mutate(relative_abundance = relative_abundance / mult_factor) %>% # calculate aggregated relative abundances 
-  select(site_id, clade_name, relative_abundance) # only retain site, clade, and relative abundance 
+  ungroup() %>%
+  mutate(relative_abundance = relative_abundance / mult_factor) %>% # rescale relative abundances after aggregation 
+  select(site_id, clade_name, relative_abundance)
 
 # make a wide version of this data frame, rows are sites and columns are clade abundances 
 community_data_wide <- 
   community_data %>% 
-  tidyr::pivot_wider(names_from = clade_name, values_from = relative_abundance) %>% 
+  pivot_wider(names_from = clade_name, values_from = relative_abundance) %>% 
   arrange(site_id) %>% 
-  tibble::column_to_rownames("site_id")
+  column_to_rownames("site_id")
 # replace NA with zero for orders that were not detected at each site 
 community_data_wide[is.na(community_data_wide)] <- 0
 ```
@@ -226,20 +235,20 @@ Create an environmental data frame, with one row per site.
 # Create environmental data frame 
 clim_data_perm <- 
   full_data %>% 
-  tidyr::drop_na(site_id) %>%  # remove rows missing site id
-  dplyr::filter(site_id != "") %>% 
+  drop_na(site_id) %>%  # remove rows missing site id
+  filter(site_id != "") %>% 
   select(!c(clade_name, relative_abundance, sequence_abundance, ANI..if.strain.level., id, date, root, seq_id, site_rep_id)) %>% # remove sequencing related variables 
   distinct() %>% # keep only unique rows, one per site 
-  arrange(site_id) %>% 
-  tibble::column_to_rownames("site_id") 
+  arrange(site_id) %>%
+  column_to_rownames("site_id")
 ```
 
 Create lists of three types of environmental variables. 
 
 ```{r environmental variable subsets}
-heavy_metal_list <- colnames(full_data)[stringr::str_detect(colnames(full_data), "EPA3051")] # heavy metal testing
-elemental_list <- colnames(full_data)[stringr::str_detect(colnames(full_data), "Mehlich3")] # soil element testing
-environmental <- c( # other environmental variables
+heavy_metal_vars <- colnames(full_data)[str_detect(colnames(full_data), "EPA3051")] # heavy metal testing
+elemental_vars <- colnames(full_data)[str_detect(colnames(full_data), "Mehlich3")] # soil element testing
+environmental_vars <- c( # other environmental variables
   "OM_by_LOI_pct",
   "water_pH",
   "mgmt_type",
@@ -247,7 +256,7 @@ environmental <- c( # other environmental variables
   "pre",
   "cld",
   "tmp",
-  "imperv" 
+  "pct_imp_2024" 
 )
 ```
 
@@ -255,33 +264,49 @@ Calculate Bray-Curtis distances between samples based on sets of variables and d
 
 ```{r pcoas}
 # pcoa on distances from order abundances 
-bray_curtis_dist_comm <- vegan::vegdist(community_data_wide, method = "bray")
-bray_curtis_pcoa_comm <- ecodist::pco(bray_curtis_dist_comm)
+bray_curtis_dist_comm <- vegdist(community_data_wide, method = "bray")
+bray_curtis_pcoa_comm <- pco(bray_curtis_dist_comm)
 
 # pcoa on distances from heavy metal measurements
-bray_curtis_dist_heavy <- vegan::vegdist(clim_data_perm %>% select(all_of(heavy_metal_list)), method = "bray")
-bray_curtis_pcoa_heavy <- ecodist::pco(bray_curtis_dist_heavy)
+bray_curtis_dist_heavy <- clim_data_perm %>%
+  select(all_of(heavy_metal_vars)) %>%
+  drop_na() %>% 
+  vegdist(method = "bray")
+bray_curtis_pcoa_heavy <- pco(bray_curtis_dist_heavy)
 
 # pcoa on distances from soil element measurements 
-bray_curtis_dist_elem <- vegan::vegdist(clim_data_perm %>% select(all_of(elemental_list)), method = "bray")
-bray_curtis_pcoa_elem <- ecodist::pco(bray_curtis_dist_elem)
+bray_curtis_dist_elem <- clim_data_perm %>%
+  select(all_of(elemental_vars)) %>%
+  drop_na() %>% 
+  vegdist(method = "bray")
+bray_curtis_pcoa_elem <- pco(bray_curtis_dist_elem)
 
 # pcoa on distances from other environmental measurements
-bray_curtis_dist_envt <- vegan::vegdist(clim_data_perm %>% select(all_of(environmental)), method = "bray")
-bray_curtis_pcoa_envt <- ecodist::pco(bray_curtis_dist_envt)
+bray_curtis_dist_envt <- clim_data_perm %>%
+  select(all_of(environmental_vars)) %>%
+  drop_na() %>% 
+  vegdist(method = "bray")
+bray_curtis_pcoa_envt <- pco(bray_curtis_dist_envt)
 
 # data frame of first two to three vectors from each pcoa 
-bray_curtis_pcoa_df <- data.frame(pcoa1 = bray_curtis_pcoa_comm$vectors[, 1], 
+bray_curtis_pcoa_df <- data.frame(site_id = rownames(bray_curtis_pcoa_comm$vectors),
+                                  pcoa1 = bray_curtis_pcoa_comm$vectors[, 1], 
                                   pcoa2 = bray_curtis_pcoa_comm$vectors[, 2],
-                                  pcoa3 = bray_curtis_pcoa_comm$vectors[, 3],
-                                  heavy1 = bray_curtis_pcoa_heavy$vectors[, 1],
-                                  heavy2 = bray_curtis_pcoa_heavy$vectors[, 2],
-                                  elem1 = bray_curtis_pcoa_elem$vectors[, 1],
-                                  elem2 = bray_curtis_pcoa_elem$vectors[, 2],
-                                  envt1 = bray_curtis_pcoa_envt$vectors[, 1],
-                                  envt2 = bray_curtis_pcoa_envt$vectors[, 2],
-                                  clim_data_perm
-)
+                                  pcoa3 = bray_curtis_pcoa_comm$vectors[, 3]) %>%
+  left_join(data.frame(site_id = rownames(bray_curtis_pcoa_heavy$vectors),
+                       heavy1 = bray_curtis_pcoa_heavy$vectors[, 1],
+                       heavy2 = bray_curtis_pcoa_heavy$vectors[, 2]), 
+            by = "site_id") %>%
+  left_join(data.frame(site_id = rownames(bray_curtis_pcoa_elem$vectors),
+                       elem1 = bray_curtis_pcoa_elem$vectors[, 1],
+                       elem2 = bray_curtis_pcoa_elem$vectors[, 2]),
+            by = "site_id") %>%
+  left_join(data.frame(site_id = rownames(bray_curtis_pcoa_envt$vectors),
+                       envt1 = bray_curtis_pcoa_envt$vectors[, 1],
+                       envt2 = bray_curtis_pcoa_envt$vectors[, 2]),
+            by = "site_id") %>%
+  left_join(clim_data_perm %>%
+              rownames_to_column(var = "site_id"), by = "site_id")
 
 # plot order abundance pcoa, colored by pH 
 ggplot(data = bray_curtis_pcoa_df, aes(x=pcoa1, y=pcoa2, color = water_pH)) +
@@ -318,11 +343,11 @@ Perform permanovas to test whether variation in Bray–Curtis dissimilarities of
 
 ```{r permanovas}
 # model with pH, temperature, and the first principal coordinate from heavy metals pcoa
-permanova_ph <- vegan::adonis2(community_data_wide ~ water_pH + tmp + heavy1, data = bray_curtis_pcoa_df, permutations = 9999)
+permanova_ph <- adonis2(community_data_wide ~ water_pH + tmp + heavy1, data = bray_curtis_pcoa_df, permutations = 9999, na.action = na.omit)
 # model with temperature 
-permanova_tmp <- vegan::adonis2(community_data_wide ~ tmp, data = bray_curtis_pcoa_df, permutations = 9999)
+permanova_tmp <- adonis2(community_data_wide ~ tmp, data = bray_curtis_pcoa_df, permutations = 9999, na.action = na.omit)
 # model with first principal coordinate from heavy metals pcoa
-permanova_heavy1 <- vegan::adonis2(community_data_wide ~ heavy1, data = bray_curtis_pcoa_df, permutations = 9999)
+permanova_heavy1 <- adonis2(community_data_wide ~ heavy1, data = bray_curtis_pcoa_df, permutations = 9999, na.action = na.omit)
 ```
 
 Generate a heatmap of order abundances. 
@@ -330,7 +355,7 @@ Generate a heatmap of order abundances.
 ```{r heatmap of orders, fig.width = 15, fig.height = 9}
 # plot relative abundances of all detected orders in each site 
 ggplot(community_data, aes(
-  forcats::fct_reorder(clade_name, relative_abundance, .desc = T, .fun = sum), 
+  fct_reorder(clade_name, relative_abundance, .desc = T, .fun = sum), 
   site_id, fill= relative_abundance)) + 
   geom_tile() +
   labs(y = "Sampling site", x = "Order", fill = "Relative\nabundance") +
@@ -345,18 +370,18 @@ ggsave("figures/heatmap_ordered.png", width = 15, height = 9)
 Generate a heatmap of environmental variables. 
 
 ```{r heatmap of environmental variables, fig.width = 15, fig.height = 9}
+vars <- c(heavy_metal_vars, elemental_vars, environmental_vars)
 clim_data_perm_plot <- 
   clim_data_perm %>%
+  select(all_of(vars)) %>% 
   scale() %>% # standardize variables to have mean 0 and standard deviation of 1 
   as.data.frame() %>% 
-  tibble::rownames_to_column("site_id") %>% 
-  tidyr::pivot_longer(!c(site_id), names_to = "name", values_to = "value") # create long data frame with environmental variable name and value pairs 
+  rownames_to_column("site_id") %>% 
+  pivot_longer(!c(site_id), names_to = "name", values_to = "value") # create long data frame with environmental variable name and value pairs 
 
 clim_data_perm_plot$name <- factor( # make environmental variable a factor and reorder levels
   x = clim_data_perm_plot$name,
-  levels = c("As_EPA3051", "Cd_EPA3051", "Cr_EPA3051", "Cu_EPA3051", "Ni_EPA3051", "Pb_EPA3051", "Zn_EPA3051",
-             "P_Mehlich3","K_Mehlich3","Ca_Mehlich3","Mg_Mehlich3", "Mn_Mehlich3", "Zn_Mehlich3","Cu_Mehlich3","Fe_Mehlich3","B_Mehlich3","S_Mehlich3","Na_Mehlich3","Al_Mehlich3",
-             "water_pH", "OM_by_LOI_pct","mgmt_type", "vap","pre" ,"cld","tmp","imperv" ))
+  levels = vars)
 
 
 # plot standardized environmental variable values by site
@@ -377,20 +402,20 @@ Calculate observed Shannon diversity index and richness for each site, and plot 
 
 ```{r richness and heavy metals, fig.width = 15, fig.height = 9}
 plot_dat <- 
-  data.frame(div_shannon = vegan::diversity(community_data_wide, index = "shannon")) %>% # calculate Shannon diversity index
-  tibble::rownames_to_column() %>% 
-  left_join(tibble::rownames_to_column(clim_data_perm)) # add in environmental variables 
+  data.frame(div_shannon = diversity(community_data_wide, index = "shannon")) %>% # calculate Shannon diversity index
+  rownames_to_column() %>% 
+  left_join(rownames_to_column(clim_data_perm), by = "rowname") # add in environmental variables 
 
 plot_dat <-
   plot_dat %>%
-  left_join(data.frame(richness = vegan::specnumber(community_data_wide)) %>% # calculate richness
-              tibble::rownames_to_column())
+  left_join(data.frame(richness = specnumber(community_data_wide)) %>% # calculate richness
+              rownames_to_column(), by = "rowname")
 
-plot_dat <- plot_dat %>% tidyr::pivot_longer(all_of(var_list)) # make long data frame
+plot_dat <- plot_dat %>% pivot_longer(all_of(vars)) # make long data frame
 
 ggplot(data = plot_dat, aes(x = log(value), y = div_shannon)) + # y is shannon diversity, x is log of environmental variable
   geom_point() +
-  geom_smooth(method = "glm") + # add trend line 
+  geom_smooth(method = "glm", formula = 'y ~ x') + # add trend line 
   facet_wrap(~name, scales = "free_x") + # separate plots by environmental variable 
   labs(x = "Environmental measurement (log scale)", y = "H' (Shannon Diversity)") +
   theme_minimal(base_size = 13)
