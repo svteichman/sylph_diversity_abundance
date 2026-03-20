@@ -27,6 +27,23 @@ db <- "GTDB"
 # db <- "GlobDB"
 ```
 
+### Set soil and site data variables
+
+```{r}
+restricted <- FALSE # TRUE if using data for all sites
+if (restricted) {
+  fig_folder <- "../figures_restricted/" # if restricted, save figures one folder up, not git tracked
+} else {
+  fig_folder <- "figures/" # if not restricted, save as figures in this repo 
+}
+local <- FALSE # if FALSE pull site and soil data from GitHub, if TRUE pull locally from data folder one directory up 
+snapshot <- "20260310" # snapshot of data we are pulling (if non-restricted)
+
+if (restricted & (!local)) {
+  stop("If using restricted data, it needs to be saved locally.")
+}
+```
+
 ### Load and clean data 
 
 Load in the table of sylph output. Each row represents a taxon identified in the sylph run, and each column represents a sample. 
@@ -71,12 +88,14 @@ We will now read in soil and site data.
 
 ```{r load soil and site data}
 # read in site data and soil data
-local <- FALSE
-snapshot <- "20260310"
-
 if (local) {
-  site_data <- read.csv(paste0("../data/BioDIGS_sites_", snapshot, ".csv"), row.names = 1)
-  soil_data <- read.csv(paste0("../data/BioDIGS_soil_", snapshot, ".csv"), row.names = 1)
+  if (restricted) {
+    site_data <- read.csv("../data/data_restricted/BioDIGS Sample Data and Kit Request MASTER - ALL_SAMPLES - SITE DATA.csv")
+    soil_data <- read.csv("../data/data_restricted/BioDIGS Sample Data and Kit Request MASTER - ALL_SAMPLES - SOIL SAMPLES.csv")
+  } else {
+    site_data <- read.csv(paste0("../data/BioDIGS_sites_", snapshot, ".csv"), row.names = 1)
+    soil_data <- read.csv(paste0("../data/BioDIGS_soil_", snapshot, ".csv"), row.names = 1)
+  }
 } else {
   site_data <- read.csv(paste0("https://raw.githubusercontent.com/FredHutch/GDSCNsoilsites/refs/heads/main/data/snapshots/BioDIGS_sites_", snapshot, ".csv"), row.names = 1)
   soil_data <- read.csv(paste0("https://raw.githubusercontent.com/FredHutch/GDSCNsoilsites/refs/heads/main/data/snapshots/BioDIGS_soil_", snapshot, ".csv"), row.names = 1)
@@ -94,9 +113,16 @@ soil_data <- soil_data %>%
   # As can't be detected lower than 3.0
   mutate(As_EPA3051 = case_when(As_EPA3051 == "< 3.0" ~ "0", As_EPA3051 == "<3.0" ~ "0", TRUE ~ As_EPA3051)) %>%
   # Cd can't be detected lower than 0.2
-  mutate(Cd_EPA3051 = case_when(Cd_EPA3051 == "< 0.2" ~ "0", Cd_EPA3051 == "<0.2" ~ "0", TRUE ~ Cd_EPA3051)) %>%
+  mutate(Cd_EPA3051 = case_when(Cd_EPA3051 == "< 0.2" ~ "0", Cd_EPA3051 == "<0.2" ~ "0", Cd_EPA3051 == "< 0.20" ~ "0", TRUE ~ Cd_EPA3051)) %>%
   # Cu edge case
   mutate(Cu_EPA3051 = case_when(Cu_EPA3051 == "< 2.0" ~ "0", TRUE ~ Cu_EPA3051)) %>%
+  # Pb edge case
+  mutate(Pb_EPA3051 = case_when(Pb_EPA3051 == "< 2.0" ~ 0, TRUE ~ Pb_EPA3051)) %>%
+  # when OM_by_LOI_pct is coded as ISS, set to NA
+  mutate(OM_by_LOI_pct = case_when(OM_by_LOI_pct == "ISS" ~ NA, TRUE ~ OM_by_LOI_pct)) %>% 
+  # for environmental variables with "sampling date not yet available", set as NA 
+  mutate(across(c(vap, pre, cld, tmp), 
+                ~ na_if(.x, "sampling date not yet available"))) %>% 
   # aggregate to site level
   group_by(site_id) %>%
   # average metal data at the site level
@@ -243,7 +269,7 @@ ggplot(data = bray_curtis_pcoa_df, aes(x=pcoa1, y=pcoa2, color = water_pH)) +
        color = "Water pH") +
   scale_color_viridis_c(end = .7) +
   theme(title = element_text(size = 10)) # makes titles smaller
-ggsave(paste0("figures/pcoa_colored_by_ph_", db, ".png"), height = 5, width = 6)
+ggsave(paste0(fig_folder, "pcoa_colored_by_ph_", db, ".png"), height = 5, width = 6)
 
 # plot order abundance pcoa, colored by temperature 
 ggplot(data = bray_curtis_pcoa_df, aes(x=pcoa1, y=pcoa2, color = tmp)) +
@@ -253,7 +279,7 @@ ggplot(data = bray_curtis_pcoa_df, aes(x=pcoa1, y=pcoa2, color = tmp)) +
        color = "Temperature") +
   scale_color_viridis_c(end = .7) +
   theme(title = element_text(size = 10)) 
-ggsave(paste0("figures/pcoa_colored_by_temp_", db, ".png"), height = 5, width = 6)
+ggsave(paste0(fig_folder, "pcoa_colored_by_temp_", db, ".png"), height = 5, width = 6)
 
 # plot order abundance pcoa, colored by first coordinate of heavy metals pcoa
 ggplot(data = bray_curtis_pcoa_df, aes(x=pcoa1, y=pcoa2, color = heavy1)) +
@@ -263,7 +289,7 @@ ggplot(data = bray_curtis_pcoa_df, aes(x=pcoa1, y=pcoa2, color = heavy1)) +
        color = "Heavy\nmetals\nPC 1") +
   scale_color_viridis_c(end = .7) +
   theme(title = element_text(size = 10)) 
-ggsave(paste0("figures/pcoa_colored_by_heavy_metals_", db, ".png"), height = 5, width = 6)
+ggsave(paste0(fig_folder, "pcoa_colored_by_heavy_metals_", db, ".png"), height = 5, width = 6)
 ```
 
 Perform permanovas to test whether variation in Bray–Curtis dissimilarities of order-level community composition is associated with environmental variables.
@@ -293,7 +319,7 @@ community_data %>%
   theme(
     axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)
   ) 
-ggsave(paste0("figures/heatmap_ordered_", db, ".png"), width = 15, height = 9)
+ggsave(paste0(fig_folder, "heatmap_ordered_", db, ".png"), width = 15, height = 9)
 ```
 
 Generate a heatmap of environmental variables. 
@@ -324,7 +350,7 @@ ggplot(clim_data_perm_plot, aes(
   theme(
     axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)
   ) 
-ggsave("figures/heatmap_env_ordered.png", width = 15, height = 9)
+ggsave(paste0(fig_folder, "heatmap_env_ordered.png"), width = 15, height = 9)
 ```
 
 Calculate observed Shannon diversity index and richness for each site, and plot Shannon diversity index by environmental variables.
@@ -380,7 +406,7 @@ full_data %>%
     vjust = .5,
     size = 7
   )) 
-ggsave(paste0("figures/rel_abund_by_sample_", db, ".png"), height = 9, width = 15)
+ggsave(paste0(fig_folder, "rel_abund_by_sample_", db, ".png"), height = 9, width = 15)
 ```
 
 Next, aggregate by site. 
@@ -404,7 +430,7 @@ ggplot(
     vjust = .5,
     size = 7
   )) 
-ggsave(paste0("figures/rel_abund_by_site_", db, ".png"), height = 9, width = 15)
+ggsave(paste0(fig_folder, "rel_abund_by_site_", db, ".png"), height = 9, width = 15)
 ```
 
 Finally, aggregate by site and only keep the ten orders with the highest average relative abundances across sites. Collapse all other orders into an "other" category. 
@@ -448,5 +474,5 @@ ggplot(
   scale_fill_manual(values = fill_values, breaks = c(rev(order_levels), "other")) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5, size = 7)) 
-ggsave(paste0("figures/top_rel_abund_by_site_", db, ".png"), height = 9, width = 15)
+ggsave(paste0(fig_folder, "top_rel_abund_by_site_", db, ".png"), height = 9, width = 15)
 ```
