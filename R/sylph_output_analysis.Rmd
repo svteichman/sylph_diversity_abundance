@@ -224,6 +224,11 @@ Calculate Bray-Curtis distances between samples based on sets of variables and d
 bray_curtis_dist_comm <- vegdist(community_data_wide, method = "bray")
 bray_curtis_pcoa_comm <- pco(bray_curtis_dist_comm)
 
+# ndms on distances from order abundances
+set.seed(15)
+nmds <- metaMDS(community_data_wide, distance = "bray", k = 2, trymax = 100)
+nmds$stress # fair/good representation
+
 # pcoa on distances from heavy metal measurements
 bray_curtis_dist_heavy <- clim_data_perm %>%
   select(all_of(heavy_metal_vars)) %>%
@@ -250,6 +255,7 @@ bray_curtis_pcoa_df <- data.frame(site_read_id = rownames(bray_curtis_pcoa_comm$
                                   pcoa1 = bray_curtis_pcoa_comm$vectors[, 1], 
                                   pcoa2 = bray_curtis_pcoa_comm$vectors[, 2],
                                   pcoa3 = bray_curtis_pcoa_comm$vectors[, 3]) %>%
+  left_join(data.frame(scores(nmds)$sites) %>% rownames_to_column(var = "site_read_id")) %>% 
   mutate(site_id = str_remove(site_read_id, "_.*"),
          read_type = str_remove(site_read_id, "^.*_")) %>% 
   left_join(data.frame(site_id = rownames(bray_curtis_pcoa_heavy$vectors),
@@ -302,6 +308,42 @@ ggplot(data = bray_curtis_pcoa_df, aes(x=pcoa1, y=pcoa2, color = heavy1, shape =
   scale_shape_manual(values = c(12, 16)) + 
   theme(title = element_text(size = 10)) 
 ggsave(paste0(fig_folder, "pcoa_colored_by_heavy_metals_", db, ".png"), height = 5, width = 6)
+
+# plot order abundance nmds, colored by pH 
+ggplot(data = bray_curtis_pcoa_df, aes(x=NMDS1, y=NMDS2, color = water_pH, shape = read_type)) +
+  geom_point(size = 5) +
+  labs(x = "NMDS1",
+       y = "NMDS2",
+       color = "Water pH", 
+       shape = "Read type") +
+  scale_color_viridis_c(end = .7) +
+  scale_shape_manual(values = c(12, 16)) + 
+  theme(title = element_text(size = 10)) # makes titles smaller
+ggsave(paste0(fig_folder, "nmds_colored_by_ph_", db, ".png"), height = 5, width = 6)
+
+# plot order abundance pcoa, colored by temperature 
+ggplot(data = bray_curtis_pcoa_df, aes(x=NMDS1, y=NMDS2, color = tmp, shape = read_type)) +
+  geom_point(size = 5) +
+  labs(x = "NMDS1",
+       y = "NMDS2",
+       color = "Temperature",
+       shape = "Read type") +
+  scale_color_viridis_c(end = .7) +
+  scale_shape_manual(values = c(12, 16)) + 
+  theme(title = element_text(size = 10)) 
+ggsave(paste0(fig_folder, "nmds_colored_by_temp_", db, ".png"), height = 5, width = 6)
+
+# plot order abundance pcoa, colored by first coordinate of heavy metals pcoa
+ggplot(data = bray_curtis_pcoa_df, aes(x=NMDS1, y=NMDS2, color = heavy1, shape = read_type)) +
+  geom_point(size = 5) +
+  labs(x = "NMDS",
+       y = "NMDS2",
+       color = "Heavy\nmetals\nPC 1",
+       shape = "Read type") +
+  scale_color_viridis_c(end = .7) +
+  scale_shape_manual(values = c(12, 16)) + 
+  theme(title = element_text(size = 10)) 
+ggsave(paste0(fig_folder, "nmds_colored_by_heavy_metals_", db, ".png"), height = 5, width = 6)
 ```
 
 Perform permanovas to test whether variation in Bray–Curtis dissimilarities of order-level community composition is associated with environmental variables.
