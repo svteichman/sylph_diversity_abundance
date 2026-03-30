@@ -23,8 +23,8 @@ library(ecodist)
 We will consider sylph outputs from two different databases, the commonly used GTDB r226 database, and the larger GlobDB database. We will set an variable here to determine which database we want to analyze the output from. 
 
 ```{r}
-# db <- "GTDB"
-db <- "GlobDB"
+db <- "GTDB"
+# db <- "GlobDB"
 ```
 
 ### Set soil and site data variables
@@ -171,6 +171,15 @@ seq_data %>%
   group_by(site_id, sequencing_instrument) %>%
   summarise(n_seq_dates = n_distinct(seq_date_cat)) %>%
   filter(n_seq_dates > 1)
+
+# aggregate sequencing data to the site level 
+seq_data <- seq_data %>%
+  filter(!is.na(sequencing_instrument)) %>% 
+  group_by(site_id, read_type) %>%
+  summarise(seq_date_summ = ifelse(
+    n_distinct(seq_date_cat, na.rm = TRUE) == 1,
+    first(seq_date_cat), "multiple"
+  ))
 ```
 
 We now combine the sylph output with the sites and soil data. 
@@ -179,7 +188,8 @@ We now combine the sylph output with the sites and soil data.
 # combine sylph data with metal and climate data 
 full_data <- combined_data %>% 
   left_join(soil_data, by = "site_id") %>% # join with soil data that has been aggregated to the site level
-  left_join(site_data, by = "site_id") # join with site data 
+  left_join(site_data, by = "site_id") %>% # join with site data 
+  left_join(seq_data, by = c("site_id", "read_type")) # join with sequencing data
 ```
 
 ### Plot data 
@@ -215,7 +225,7 @@ clim_data_perm <-
   full_data %>% 
   tidyr::drop_na(site_id) %>%  # remove rows missing site id
   dplyr::filter(site_id != "") %>% 
-  select(!c(clade_name, platform, read_type, site_read_id, replicate, sample_id, rel_abund_sum)) %>% # remove sequencing related variables 
+  select(!c(clade_name, platform, read_type, site_read_id, replicate, sample_id, rel_abund_sum, seq_date_summ)) %>% # remove sequencing related variables 
   distinct() %>% # keep only unique rows, one per site 
   arrange(site_id) %>%
   column_to_rownames("site_id")
@@ -292,7 +302,8 @@ bray_curtis_pcoa_df <- data.frame(site_read_id = rownames(bray_curtis_pcoa_comm$
                        envt2 = bray_curtis_pcoa_envt$vectors[, 2]),
             by = "site_id") %>%
   left_join(clim_data_perm %>%
-              rownames_to_column(var = "site_id"), by = "site_id")
+              rownames_to_column(var = "site_id"), by = "site_id") %>%
+  left_join(full_data %>% select(site_read_id, seq_date_summ), by = "site_read_id")
 
 # plot order abundance pcoa, colored by pH 
 ggplot(data = bray_curtis_pcoa_df, aes(x=pcoa1, y=pcoa2, color = water_pH, shape = read_type)) +
@@ -330,6 +341,17 @@ ggplot(data = bray_curtis_pcoa_df, aes(x=pcoa1, y=pcoa2, color = heavy1, shape =
   theme(title = element_text(size = 10)) 
 ggsave(paste0(fig_folder, "pcoa_colored_by_heavy_metals_", db, ".png"), height = 5, width = 6)
 
+# plot order abundance pcoa, colored by sequencing data
+ggplot(data = bray_curtis_pcoa_df, aes(x=pcoa1, y=pcoa2, color = seq_date_summ, shape = read_type)) +
+  geom_point(size = 5) +
+  labs(x = "PC1",
+       y = "PC2",
+       color = "Sequencing date",
+       shape = "Read type") +
+  scale_shape_manual(values = c(12, 16)) + 
+  theme(title = element_text(size = 10)) 
+ggsave(paste0(fig_folder, "pcoa_colored_by_sequencing_date_", db, ".png"), height = 5, width = 6)
+
 # plot order abundance nmds, colored by pH 
 ggplot(data = bray_curtis_pcoa_df, aes(x=NMDS1, y=NMDS2, color = water_pH, shape = read_type)) +
   geom_point(size = 5) +
@@ -342,7 +364,7 @@ ggplot(data = bray_curtis_pcoa_df, aes(x=NMDS1, y=NMDS2, color = water_pH, shape
   theme(title = element_text(size = 10)) # makes titles smaller
 ggsave(paste0(fig_folder, "nmds_colored_by_ph_", db, ".png"), height = 5, width = 6)
 
-# plot order abundance pcoa, colored by temperature 
+# plot order abundance nmds, colored by temperature 
 ggplot(data = bray_curtis_pcoa_df, aes(x=NMDS1, y=NMDS2, color = tmp, shape = read_type)) +
   geom_point(size = 5) +
   labs(x = "NMDS1",
@@ -354,10 +376,10 @@ ggplot(data = bray_curtis_pcoa_df, aes(x=NMDS1, y=NMDS2, color = tmp, shape = re
   theme(title = element_text(size = 10)) 
 ggsave(paste0(fig_folder, "nmds_colored_by_temp_", db, ".png"), height = 5, width = 6)
 
-# plot order abundance pcoa, colored by first coordinate of heavy metals pcoa
+# plot order abundance nmds, colored by first coordinate of heavy metals pcoa
 ggplot(data = bray_curtis_pcoa_df, aes(x=NMDS1, y=NMDS2, color = heavy1, shape = read_type)) +
   geom_point(size = 5) +
-  labs(x = "NMDS",
+  labs(x = "NMDS1",
        y = "NMDS2",
        color = "Heavy\nmetals\nPC 1",
        shape = "Read type") +
@@ -365,6 +387,17 @@ ggplot(data = bray_curtis_pcoa_df, aes(x=NMDS1, y=NMDS2, color = heavy1, shape =
   scale_shape_manual(values = c(12, 16)) + 
   theme(title = element_text(size = 10)) 
 ggsave(paste0(fig_folder, "nmds_colored_by_heavy_metals_", db, ".png"), height = 5, width = 6)
+
+# plot order abundance nmds, colored by sequencing data
+ggplot(data = bray_curtis_pcoa_df, aes(x=NMDS1, y=NMDS2, color = seq_date_summ, shape = read_type)) +
+  geom_point(size = 5) +
+  labs(x = "NMDS1",
+       y = "NMDS2",
+       color = "Sequencing date",
+       shape = "Read type") +
+  scale_shape_manual(values = c(12, 16)) + 
+  theme(title = element_text(size = 10)) 
+ggsave(paste0(fig_folder, "nmds_colored_by_sequencing_date_", db, ".png"), height = 5, width = 6)
 ```
 
 Perform permanovas to test whether variation in Bray–Curtis dissimilarities of order-level community composition is associated with environmental variables.
