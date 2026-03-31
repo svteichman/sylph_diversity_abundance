@@ -303,7 +303,9 @@ bray_curtis_pcoa_df <- data.frame(site_read_id = rownames(bray_curtis_pcoa_comm$
             by = "site_id") %>%
   left_join(clim_data_perm %>%
               rownames_to_column(var = "site_id"), by = "site_id") %>%
-  left_join(full_data %>% select(site_read_id, seq_date_summ) %>% distinct(), by = "site_read_id")
+  left_join(full_data %>% select(site_read_id, seq_date_summ) %>% distinct(), by = "site_read_id") %>%
+  left_join(data.frame(site_id = site_data$site_id, 
+                       state = str_remove(site_data$origin,"^.*,\\s*")), by = "site_id")
 
 # plot order abundance pcoa, colored by pH 
 ggplot(data = bray_curtis_pcoa_df, aes(x=pcoa1, y=pcoa2, color = water_pH, shape = read_type)) +
@@ -352,6 +354,17 @@ ggplot(data = bray_curtis_pcoa_df, aes(x=pcoa1, y=pcoa2, color = seq_date_summ, 
   theme(title = element_text(size = 10)) 
 ggsave(paste0(fig_folder, "pcoa_colored_by_sequencing_date_", db, ".png"), height = 5, width = 6)
 
+# plot order abundance pcoa, colored by origin state
+ggplot(data = bray_curtis_pcoa_df, aes(x=pcoa1, y=pcoa2, color = state, shape = read_type)) +
+  geom_point(size = 5) +
+  labs(x = "PC1",
+       y = "PC2",
+       color = "State",
+       shape = "Read type") +
+  scale_shape_manual(values = c(12, 16)) + 
+  theme(title = element_text(size = 10)) 
+ggsave(paste0(fig_folder, "pcoa_colored_by_state_", db, ".png"), height = 5, width = 6)
+
 # plot order abundance nmds, colored by pH 
 ggplot(data = bray_curtis_pcoa_df, aes(x=NMDS1, y=NMDS2, color = water_pH, shape = read_type)) +
   geom_point(size = 5) +
@@ -398,6 +411,17 @@ ggplot(data = bray_curtis_pcoa_df, aes(x=NMDS1, y=NMDS2, color = seq_date_summ, 
   scale_shape_manual(values = c(12, 16)) + 
   theme(title = element_text(size = 10)) 
 ggsave(paste0(fig_folder, "nmds_colored_by_sequencing_date_", db, ".png"), height = 5, width = 6)
+
+# plot order abundance nmds, colored by state
+ggplot(data = bray_curtis_pcoa_df, aes(x=NMDS1, y=NMDS2, color = state, shape = read_type)) +
+  geom_point(size = 5) +
+  labs(x = "NMDS1",
+       y = "NMDS2",
+       color = "State",
+       shape = "Read type") +
+  scale_shape_manual(values = c(12, 16)) + 
+  theme(title = element_text(size = 10)) 
+ggsave(paste0(fig_folder, "nmds_colored_by_state_", db, ".png"), height = 5, width = 6)
 ```
 
 Perform permanovas to test whether variation in Bray–Curtis dissimilarities of order-level community composition is associated with environmental variables.
