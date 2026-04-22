@@ -363,7 +363,7 @@ ggplot(data = bray_curtis_pcoa_df, aes(x=pcoa1, y=pcoa2, color = state, shape = 
        shape = "Read type") +
   scale_shape_manual(values = c(12, 16)) + 
   theme(title = element_text(size = 10)) 
-ggsave(paste0(fig_folder, "pcoa_colored_by_state_", db, ".png"), height = 5, width = 6)
+ggsave(paste0(fig_folder, "pcoa_colored_by_state_", db, ".png"), height = 7.5, width = 9)
 
 # plot order abundance nmds, colored by pH 
 ggplot(data = bray_curtis_pcoa_df, aes(x=NMDS1, y=NMDS2, color = water_pH, shape = read_type)) +
@@ -421,7 +421,7 @@ ggplot(data = bray_curtis_pcoa_df, aes(x=NMDS1, y=NMDS2, color = state, shape = 
        shape = "Read type") +
   scale_shape_manual(values = c(12, 16)) + 
   theme(title = element_text(size = 10)) 
-ggsave(paste0(fig_folder, "nmds_colored_by_state_", db, ".png"), height = 5, width = 6)
+ggsave(paste0(fig_folder, "nmds_colored_by_state_", db, ".png"), height = 7.5, width = 9)
 ```
 
 Perform permanovas to test whether variation in Bray–Curtis dissimilarities of order-level community composition is associated with environmental variables.
@@ -550,10 +550,10 @@ full_data %>%
     angle = 90,
     hjust = 1,
     vjust = .5,
-    size = 7
+    size = 5
   )) +
   facet_grid(rows = NULL, cols = vars(read_type), scales = "free_x", space = "free")
-ggsave(paste0(fig_folder, "rel_abund_by_sample_", db, ".png"), height = 9, width = 15)
+ggsave(paste0(fig_folder, "rel_abund_by_sample_", db, ".png"), height = 6, width = 10)
 ```
 
 Next, aggregate by site. 
@@ -576,11 +576,11 @@ community_data %>%
     angle = 90,
     hjust = 1,
     vjust = .5,
-    size = 7
+    size = 6
   )) +
   facet_grid(rows = NULL, cols = vars(read_type), scales = "free_x", space = "free") +
   scale_x_discrete(labels = function(x) sub("_.*", "", x))
-ggsave(paste0(fig_folder, "rel_abund_by_site_", db, ".png"), height = 9, width = 15)
+ggsave(paste0(fig_folder, "rel_abund_by_site_", db, ".png"), height = 6, width = 10)
 ```
 
 Make the same plot, ordering the sites by pH. 
@@ -609,7 +609,7 @@ community_data %>%
     angle = 90,
     hjust = 1,
     vjust = .5,
-    size = 7
+    size = 6
   )) +
   facet_grid(rows = NULL, cols = vars(read_type), scales = "free_x", space = "free") +
   scale_x_discrete(labels = function(x) sub("_.*", "", x))
@@ -642,7 +642,7 @@ community_data %>%
     angle = 90,
     hjust = 1,
     vjust = .5,
-    size = 7
+    size = 6
   )) +
   facet_grid(rows = NULL, cols = vars(read_type), scales = "free_x", space = "free") +
   scale_x_discrete(labels = function(x) sub("_.*", "", x))
@@ -670,11 +670,11 @@ community_data %>%
     angle = 90,
     hjust = 1,
     vjust = .5,
-    size = 7
+    size = 8
   )) +
   scale_x_discrete(labels = function(x) sub("_", " ", x)) +
   facet_grid(cols = vars(site_id), scales = "free_x", space = "free")
-ggsave(paste0(fig_folder, "rel_abund_by_site_long_v_short_", db, ".png"), height = 9, width = 15)
+ggsave(paste0(fig_folder, "rel_abund_by_site_long_v_short_", db, ".png"), height = 6, width = 10)
 ```
 
 Finally, aggregate by site and only keep the ten orders with the highest average relative abundances across sites. Collapse all other orders into an "other" category. 
@@ -725,10 +725,10 @@ ggplot(
   labs(x = "Site Location", y = "Relative Abundance", fill = "Order name") +
   scale_fill_manual(values = fill_values, breaks = c(rev(order_levels), "other")) +
   theme_minimal() +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5, size = 7)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5, size = 6)) +
   facet_grid(rows = NULL, cols = vars(read_type), scales = "free_x", space = "free") +
   scale_x_discrete(labels = function(x) sub("_.*", "", x))
-ggsave(paste0(fig_folder, "top_rel_abund_by_site_", db, ".png"), height = 9, width = 15)
+ggsave(paste0(fig_folder, "top_rel_abund_by_site_", db, ".png"), height = 6, width = 10.5)
 ```
 
 Make the same plot, with sites ordered by pH.
@@ -748,7 +748,7 @@ community_data_top_n %>%
   labs(x = "Site Location", y = "Relative Abundance", fill = "Order name") +
   scale_fill_manual(values = fill_values, breaks = c(rev(order_levels), "other")) +
   theme_minimal() +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5, size = 7)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5, size = 6)) +
   facet_grid(rows = NULL, cols = vars(read_type), scales = "free_x", space = "free") +
   scale_x_discrete(labels = function(x) sub("_.*", "", x))
 #ggsave(paste0(fig_folder, "top_rel_abund_by_site_pH_", db, ".png"), height = 9, width = 15)
@@ -771,7 +771,7 @@ community_data_top_n %>%
   labs(x = "Site Location", y = "Relative Abundance", fill = "Order name") +
   scale_fill_manual(values = fill_values, breaks = c(rev(order_levels), "other")) +
   theme_minimal() +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5, size = 7)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5, size = 6)) +
   facet_grid(rows = NULL, cols = vars(read_type), scales = "free_x", space = "free") +
   scale_x_discrete(labels = function(x) sub("_.*", "", x))
 #ggsave(paste0(fig_folder, "top_rel_abund_by_site_tmp_", db, ".png"), height = 9, width = 15)
@@ -795,10 +795,10 @@ community_data_top_n %>%
     angle = 90,
     hjust = 1,
     vjust = .5,
-    size = 7
+    size = 8
   )) +
   scale_fill_manual(values = fill_values, breaks = c(rev(order_levels), "other")) +
   scale_x_discrete(labels = function(x) sub("_", " ", x)) +
   facet_grid(cols = vars(site_id), scales = "free_x", space = "free")
-ggsave(paste0(fig_folder, "top_rel_abund_by_site_long_v_short_", db, ".png"), height = 9, width = 15)
+ggsave(paste0(fig_folder, "top_rel_abund_by_site_long_v_short_", db, ".png"), height = 6, width = 10)
 ```
