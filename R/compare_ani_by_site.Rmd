@@ -1,0 +1,202 @@
+---
+title: "Compare ANI across sites"
+output: html_document
+---
+
+```{r setup, include = FALSE}
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+knitr::opts_chunk$set(fig.width = 12, fig.height = 7)
+```
+
+```{r, message = FALSE}
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(readr)
+library(tidyr)
+```
+
+### Set database variable
+
+We will consider sylph outputs from two different databases, the commonly used GTDB r226 database, and the larger GlobDB database. We will set an variable here to determine which database we want to analyze the output from. 
+
+```{r}
+# db <- "GTDB"
+db <- "Glob_DB"
+```
+
+### Load and clean data 
+
+Load .sylphmpa files
+
+```{r load sylphmpa data, message = FALSE}
+sylphmpa_names <- list.files(paste0("../data/", db, "_per_sample"))
+sylphmpa_files <- paste0("../data/", db, "_per_sample/", sylphmpa_names)
+n_files <- length(sylphmpa_files)
+sylphmpa_list <- vector(mode = "list", length = n_files)
+for (i in 1:n_files) {
+  sylphmpa_list[[i]] <- read_tsv(sylphmpa_files[i], skip = 1)
+}
+names(sylphmpa_list) <- str_remove(sylphmpa_names, ".sylphmpa")
+```
+
+```{r make strain df}
+strain_df <- bind_rows(sylphmpa_list, .id = "site") %>% 
+  rename(ani = `ANI (if strain-level)`, # simplify names 
+         coverage = `Coverage (if strain-level)`) %>%
+  filter(!is.na(ani)) %>% # only keep strain level clades
+  separate_wider_delim(site, names = c("sequencing", "site", "replicate", "long_read"), 
+                       delim = "_", too_few = "align_start") %>% # separate site, replicate, and whether long read sequencing is performed 
+  mutate(location = str_remove_all(site, "[0-9]")) # get location from site 
+```
+
+### Explore data 
+
+Summary of strains found in samples. 
+
+```{r strain_summary}
+nrow(strain_df) # observations (paired sample and strain)
+length(unique(strain_df$clade_name)) # unique strains found in dataset 
+strain_summary <- strain_df %>%
+  group_by(clade_name) %>%
+  summarise(n_samples = n(),
+            n_sites = n_distinct(site),
+            n_locations = n_distinct(location)) 
+summary(strain_summary$n_samples) # number of samples each strain appears in 
+summary(strain_summary$n_sites) # number of sites each strain appears in 
+summary(strain_summary$n_locations) # number of locations each strain appears in 
+```
+
+```{r, include = FALSE}
+n_clade <- length(unique(strain_df$clade_name))
+n_single_sample <- sum(strain_summary$n_samples == 1)
+n_single_site <- sum(strain_summary$n_sites == 1)
+n_single_location <- sum(strain_summary$n_locations == 1)
+```
+
+Out of the `r n_clade` strains, `r n_single_sample` (`r round(n_single_sample / n_clade, 2) * 100`%) appear in a single sample, `r n_single_site` (`r round(n_single_site / n_clade, 2) * 100`%) appear in a single site, and `r n_single_location` (`r round(n_single_location / n_clade, 2) * 100`%) appear in a single location (representing a state or city). We will limit our analysis to the `r n_clade - n_single_site` strains that appear in multiple sites. 
+
+```{r}
+multiple_site_strains <- strain_summary %>%
+  filter(n_sites > 1) %>%
+  pull(clade_name)
+multiple_site_df <- strain_df %>%
+  filter(clade_name %in% multiple_site_strains)
+```
+
+Look at distribution of mean ANI for each strain. 
+
+```{r}
+multiple_site_summary <- strain_df %>%
+  group_by(clade_name) %>%
+  summarise(n_sites = n_distinct(site),
+            mean_ani = mean(ani, na.rm = TRUE),
+            var_ani = var(ani, na.rm = TRUE))
+multiple_site_summary %>%
+  ggplot(aes(x = mean_ani)) + 
+  geom_histogram() + 
+  labs(y = "Count", x = "Mean ANI") +
+  theme_minimal()
+```
+
+Look at distribution of ANI across sites.
+
+```{r}
+multiple_site_df %>%
+  ggplot(aes(y = ani, x = site, group = site)) + 
+  geom_boxplot() +
+  labs(x = "Site", y = "ANI") + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+multiple_site_df %>%
+  ggplot(aes(y = ani, x = location, group = location)) + 
+  geom_boxplot() +
+  labs(x = "Location", y = "ANI") + 
+  theme_minimal() 
+```
+
+Identify 20 strains that are present in the most number of sites, make heatmap with ANI across sites.
+
+```{r, fig.height = 10}
+n <- 20
+# determine n clades with the highest prevalence 
+top_n_clades <- strain_summary %>%
+  mutate(clade_name = str_remove(clade_name, "^.*?(?=s__)") %>%
+           str_replace("(?=t__)", "\n") %>%
+           str_replace_all(" ", "\n")) %>%
+  slice_max(order_by = n_sites, n = n) %>%
+  pull(clade_name)
+# alphabetical ordering of sites (for plotting)
+site_levels <- sort(unique(multiple_site_df$site))
+# df for top n strains across all sites 
+top_n_df <- multiple_site_df %>%
+  group_by(clade_name, site) %>%
+  summarise(mean_site_ani = mean(ani),
+            .groups = "drop_last") %>% # mean ani, over site and strain 
+  mutate(clade_name = str_remove(clade_name, "^.*?(?=s__)") %>%
+           str_replace("(?=t__)", "\n") %>%
+           str_replace_all(" ", "\n")) %>% # only show species and strain 
+  filter(clade_name %in% top_n_clades) %>%
+  mutate(clade_name = factor(clade_name, levels = top_n_clades),
+         site = factor(site, levels = site_levels))
+
+# df for mean ANI by site (across all strains in multiple sites)
+site_summ_df <- multiple_site_df %>%
+  group_by(site) %>%
+  summarise(mean_site_ani = mean(ani)) %>%
+  mutate(site = factor(site, levels = site_levels)) %>%
+  filter(site %in% unique(top_n_df$site)) %>%
+  mutate(clade_name = "all strains in\nmultiple sites")
+  
+# df for mean ANI by strain (across all sites)
+strain_summ_df <- multiple_site_df %>%
+  group_by(clade_name) %>%
+  summarise(mean_site_ani = mean(ani)) %>%
+  mutate(clade_name = str_remove(clade_name, "^.*?(?=s__)") %>%
+           str_replace("(?=t__)", "\n") %>%
+           str_replace_all(" ", "\n")) %>%
+  filter(clade_name %in% top_n_clades) %>%
+  mutate(clade_name = factor(clade_name, levels = top_n_clades)) %>%
+  mutate(site = "all sites")
+
+# combine dfs 
+full_df <- rbind(top_n_df, site_summ_df, strain_summ_df) %>%
+  mutate(site = factor(site, levels = c(site_levels, "all sites")), 
+         clade_name = factor(clade_name, levels = c(top_n_clades, "all strains in\nmultiple sites")))
+
+# plot heatmap 
+heatmap <- full_df %>%
+  ggplot(aes(x = site, y = clade_name, fill = mean_site_ani)) + 
+  geom_tile() +
+  scale_fill_viridis_c(limits = c(95, 100)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        legend.position = "bottom") +
+  labs(x = "Site", y = "Strain (twenty most prevalent)", fill = "Mean site ANI")
+
+heatmap
+``` 
+
+Now look into individual strains that appear in multiple sites, and compare ANI across sites. For this, I'm not sure what strains we want to look into, but if there are particular strains of interest then we could compare ANI values across sites. As an example, I'll start with the strain with the highest prevalence in the data.
+
+```{r study strain}
+# example: look at most prevalent strain 
+strain <- strain_summary %>%
+  slice_max(order_by = n_sites, n = 1) %>%
+  pull(clade_name)
+
+strain_df %>%
+  filter(clade_name == strain) %>% # filter to just this strain 
+  ggplot(aes(y = ani, x = site)) + 
+  geom_point() + 
+  labs(x = "Site", y = "ANI") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+strain_df %>%
+  filter(clade_name == strain) %>%
+  ggplot(aes(y = ani, x = location)) + 
+  geom_point() + 
+  labs(x = "Location", y = "ANI") +
+  theme_minimal()
+```
