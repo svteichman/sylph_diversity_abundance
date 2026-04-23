@@ -51,5 +51,6 @@ rsconnect/
 # .Rproj file
 *.Rproj
 
-*.html
 *.DS_Store
+# .html output
+*.html
