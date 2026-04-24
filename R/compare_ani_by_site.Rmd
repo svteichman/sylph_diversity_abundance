@@ -35,7 +35,7 @@ sylphmpa_files <- paste0("../data/", db, "_per_sample/", sylphmpa_names)
 n_files <- length(sylphmpa_files)
 sylphmpa_list <- vector(mode = "list", length = n_files)
 for (i in 1:n_files) {
-  sylphmpa_list[[i]] <- read_tsv(sylphmpa_files[i], skip = 1)
+  sylphmpa_list[[i]] <- read_tsv(sylphmpa_files[i], skip = 1, show_col_types = F)
 }
 names(sylphmpa_list) <- str_remove(sylphmpa_names, ".sylphmpa")
 ```
@@ -110,6 +110,19 @@ multiple_site_df %>%
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 multiple_site_df %>%
   ggplot(aes(y = ani, x = location, group = location)) + 
+  geom_boxplot() +
+  labs(x = "Location", y = "ANI") + 
+  theme_minimal() 
+  
+ # Order by median - might be helpful for identifying outliers
+multiple_site_df %>%
+  ggplot(aes(y = ani, x = forcats::fct_reorder(site, ani, median), group = site)) + 
+  geom_boxplot() +
+  labs(x = "Site", y = "ANI") + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+multiple_site_df %>%
+  ggplot(aes(y = ani, x = forcats::fct_reorder(location, ani, median), group = location)) + 
   geom_boxplot() +
   labs(x = "Location", y = "ANI") + 
   theme_minimal() 
@@ -195,8 +208,8 @@ strain_df %>%
 
 strain_df %>%
   filter(clade_name == strain) %>%
-  ggplot(aes(y = ani, x = location)) + 
-  geom_point() + 
+  ggplot(aes(y = ani, x = forcats::fct_reorder(location, ani, median))) + 
+  geom_boxplot() +
   labs(x = "Location", y = "ANI") +
   theme_minimal()
 ```
