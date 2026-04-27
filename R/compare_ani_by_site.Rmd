@@ -14,6 +14,7 @@ library(stringr)
 library(ggplot2)
 library(readr)
 library(tidyr)
+library(tibble)
 ```
 
 ### Set database variable
@@ -189,6 +190,34 @@ heatmap <- full_df %>%
 
 heatmap
 ``` 
+
+Hierarchical clustering of sites based on presence/absence of strains.
+
+```{r}
+# using just the top n strains
+ani_mat <- top_n_df %>%
+  pivot_wider(names_from = clade_name, values_from = mean_site_ani) %>%
+  column_to_rownames("site") %>%
+  mutate(across(everything(), ~ replace_na(.x, 0)))
+pres_mat <- (ani_mat > 0) * 1
+pres_dist <- dist(pres_mat)
+clusters <- hclust(pres_dist)
+plot(clusters)
+
+# using all strains
+ani_mat <- strain_df %>%
+  group_by(site, clade_name) %>%
+  summarise(mean_site_ani = mean(ani)) %>% 
+  pivot_wider(names_from = clade_name, values_from = mean_site_ani) %>%
+  column_to_rownames("site") %>%
+  mutate(across(everything(), ~ replace_na(.x, 0)))
+pres_mat <- (ani_mat > 0) * 1
+pres_dist <- dist(pres_mat)
+clusters <- hclust(pres_dist)
+plot(clusters)
+```
+
+In both of these plots, we can see sites from locations E, TC, F, ND, and SC cluster, which matches the patterns that we see in the heatmap.
 
 Now look into individual strains that appear in multiple sites, and compare ANI across sites. For this, I'm not sure what strains we want to look into, but if there are particular strains of interest then we could compare ANI values across sites. As an example, I'll start with the strain with the highest prevalence in the data.
 
