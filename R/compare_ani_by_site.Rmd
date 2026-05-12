@@ -9,12 +9,8 @@ knitr::opts_chunk$set(fig.width = 12, fig.height = 7)
 ```
 
 ```{r, message = FALSE}
-library(dplyr)
-library(stringr)
-library(ggplot2)
-library(readr)
-library(tidyr)
-library(tibble)
+library(tidyverse)
+library(ComplexHeatmap)
 ```
 
 ### Set database variable
@@ -191,33 +187,40 @@ heatmap <- full_df %>%
 heatmap
 ``` 
 
-Hierarchical clustering of sites based on presence/absence of strains.
+Make heatmap with ordering based on hierarchical clustering, where `NA` values are replaced with `0`.
 
-```{r}
-# using just the top n strains
+```{r, fig.height = 10}
+# build your clustering matrix (same as you already do)
 ani_mat <- top_n_df %>%
   pivot_wider(names_from = clade_name, values_from = mean_site_ani) %>%
-  column_to_rownames("site") %>%
-  mutate(across(everything(), ~ replace_na(.x, 0)))
-pres_mat <- (ani_mat > 0) * 1
-pres_dist <- dist(pres_mat)
-clusters <- hclust(pres_dist)
-plot(clusters)
+  column_to_rownames("site") 
+ani_mat_pres <- ani_mat %>% 
+  mutate(across(everything(), ~ replace_na(.x, 0))) %>%
+  as.matrix() %>%
+  t()
+ani_mat <- ani_mat %>% t()
 
-# using all strains
-ani_mat <- strain_df %>%
-  group_by(site, clade_name) %>%
-  summarise(mean_site_ani = mean(ani)) %>% 
-  pivot_wider(names_from = clade_name, values_from = mean_site_ani) %>%
-  column_to_rownames("site") %>%
-  mutate(across(everything(), ~ replace_na(.x, 0)))
-pres_mat <- (ani_mat > 0) * 1
-pres_dist <- dist(pres_mat)
-clusters <- hclust(pres_dist)
-plot(clusters)
+# cluster sites (rows)
+row_hclust <- hclust(dist(ani_mat_pres))
+
+# optional: cluster strains too (columns)
+col_hclust <- hclust(dist(t(ani_mat_pres)))
+
+Heatmap(
+  ani_mat,
+  name = "Mean\nsite\nANI",
+  cluster_rows = row_hclust,
+  cluster_columns = col_hclust,
+  col = viridis::viridis(100),
+  column_title = "Site",
+  row_title = "Strain (twenty most prevalent)",
+  row_names_gp = gpar(fontsize = 8),     
+  column_names_gp = gpar(fontsize = 8),
+  na_col = "white"
+)
 ```
 
-In both of these plots, we can see sites from locations E, TC, F, ND, and SC cluster, which matches the patterns that we see in the heatmap.
+In this plot we can see certain site locations clustering together based on presence/absence of these top twenty most prevalent strains. Specifically, E (El Paso, TX), F (Fresno, CA), ND (Bismarck, North Dakota), TC (Tuba City, AZ) all cluster together, and are somewhat dry sites. 
 
 Now look into individual strains that appear in multiple sites, and compare ANI across sites. For this, I'm not sure what strains we want to look into, but if there are particular strains of interest then we could compare ANI values across sites. As an example, I'll start with the strain with the highest prevalence in the data.
 
@@ -241,4 +244,7 @@ strain_df %>%
   geom_boxplot() +
   labs(x = "Location", y = "ANI") +
   theme_minimal()
+
+anova_res <- aov(formula = ani ~ location, data = strain_df %>% filter(clade_name == strain))
+summary(anova_res)
 ```
