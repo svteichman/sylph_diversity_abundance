@@ -245,6 +245,18 @@ strain_df %>%
   labs(x = "Location", y = "ANI") +
   theme_minimal()
 
+# only consider locations with 5 or more samples
+strain_df %>%
+  filter(clade_name == strain) %>%
+  group_by(location) %>%
+  filter(n() >= 5) %>%
+  ungroup() %>% 
+  ggplot(aes(y = ani, x = forcats::fct_reorder(location, ani, median))) + 
+  geom_violin(width = 1.5) +
+  geom_point(color = "blue", size = 1) + 
+  labs(x = "Location", y = "ANI") +
+  theme_minimal()
+
 anova_res <- aov(formula = ani ~ location, data = strain_df %>% filter(clade_name == strain))
 summary(anova_res)
 ```
